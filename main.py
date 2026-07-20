@@ -1,21 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from repository import InMemoryTaskRepository
+from service import TaskService
+
 app = FastAPI()
 
-
-@app.get(
-    "/", summary="API info", description="Returns basic information about this API."
-)
-def root():
-    return {"name": "Task API", "version": "1.0", "endpoints": ["/tasks"]}
-
-
-tasks = [
-    {"id": 1, "title": "Buy milk", "done": False},
-    {"id": 2, "title": "Walk the dog", "done": False},
-    {"id": 3, "title": "Read a book", "done": True},
-]
+repository = InMemoryTaskRepository()
+service = TaskService(repository)
 
 
 class TaskCreate(BaseModel):
@@ -27,81 +19,55 @@ class TaskUpdate(BaseModel):
     done: bool
 
 
-@app.get(
-    "/health",
-    summary="Health check",
-    description="Returns server status — used to verify the API is alive.",
-)
+@app.get("/", summary="API info")
+def root():
+    return {"name": "Task API", "version": "1.0", "endpoints": ["/tasks"]}
+
+
+@app.get("/health", summary="Health check")
 def health():
     return {"status": "ok"}
 
 
-@app.get("/hello", summary="Greeting", description="Returns a friendly hello message.")
+@app.get("/hello", summary="Greeting")
 def hello(name: str = "world"):
     return {"message": f"Hello, {name}!"}
 
 
-@app.get(
-    "/tasks",
-    summary="List all tasks",
-    description="Returns every task in the in-memory list.",
-)
+@app.get("/tasks", summary="List all tasks")
 def get_tasks():
-    return tasks
+    return service.list_tasks()
 
 
-@app.get(
-    "/tasks/{task_id}",
-    summary="Get one task",
-    description="Returns a single task by id, or 404 if it doesn't exist.",
-)
+@app.get("/tasks/{task_id}", summary="Get one task")
 def get_task(task_id: int):
-    for task in tasks:
-        if task["id"] == task_id:
-            return task
-    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    task = service.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return task
 
 
-@app.post(
-    "/tasks",
-    status_code=201,
-    summary="Create a task",
-    description="Creates a new task. Requires a non-empty title.",
-)
+@app.post("/tasks", status_code=201, summary="Create a task")
 def create_task(task: TaskCreate):
-    if not task.title or not task.title.strip():
-        raise HTTPException(status_code=400, detail="Title is required")
-    new_id = max((t["id"] for t in tasks), default=0) + 1
-    new_task = {"id": new_id, "title": task.title, "done": False}
-    tasks.append(new_task)
-    return new_task
+    try:
+        return service.create_task(task.title)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.put(
-    "/tasks/{task_id}",
-    summary="Update a task",
-    description="Replaces a task's title and done status. 404 if the id doesn't exist.",
-)
+@app.put("/tasks/{task_id}", summary="Update a task")
 def update_task(task_id: int, update: TaskUpdate):
-    if not update.title or not update.title.strip():
-        raise HTTPException(status_code=400, detail="Title is required")
-    for task in tasks:
-        if task["id"] == task_id:
-            task["title"] = update.title
-            task["done"] = update.done
-            return task
-    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    try:
+        task = service.update_task(task_id, update.title, update.done)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return task
 
 
-@app.delete(
-    "/tasks/{task_id}",
-    status_code=204,
-    summary="Delete a task",
-    description="Removes a task by id. 404 if it doesn't exist.",
-)
+@app.delete("/tasks/{task_id}", status_code=204, summary="Delete a task")
 def delete_task(task_id: int):
-    for i, task in enumerate(tasks):
-        if task["id"] == task_id:
-            tasks.pop(i)
-            return
-    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    deleted = service.delete_task(task_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
