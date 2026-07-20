@@ -1,12 +1,12 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from repository import InMemoryTaskRepository
+from repository import PostgresTaskRepository
 from service import TaskService
 
 app = FastAPI()
 
-repository = InMemoryTaskRepository()
+repository = PostgresTaskRepository()  # was: InMemoryTaskRepository()
 service = TaskService(repository)
 
 

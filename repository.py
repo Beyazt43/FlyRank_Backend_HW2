@@ -1,4 +1,11 @@
+import os
 from abc import ABC, abstractmethod
+
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class TaskRepository(ABC):
@@ -55,3 +62,52 @@ class InMemoryTaskRepository(TaskRepository):
                 self.tasks.pop(i)
                 return True
         return False
+
+
+class PostgresTaskRepository(TaskRepository):
+    def __init__(self):
+        self.connection_string = os.environ["DATABASE_URL"]
+
+    def _connect(self):
+        return psycopg2.connect(self.connection_string)
+
+    def get_all(self):
+        with self._connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT id, title, done FROM tasks ORDER BY id;")
+                return cur.fetchall()
+
+    def get_by_id(self, task_id: int):
+        with self._connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT id, title, done FROM tasks WHERE id = %s;", (task_id,)
+                )
+                return cur.fetchone()
+
+    def create(self, title: str):
+        with self._connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "INSERT INTO tasks (title, done) VALUES (%s, false) RETURNING id, title, done;",
+                    (title,),
+                )
+                conn.commit()
+                return cur.fetchone()
+
+    def update(self, task_id: int, title: str, done: bool):
+        with self._connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "UPDATE tasks SET title = %s, done = %s WHERE id = %s RETURNING id, title, done;",
+                    (title, done, task_id),
+                )
+                conn.commit()
+                return cur.fetchone()
+
+    def delete(self, task_id: int):
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM tasks WHERE id = %s;", (task_id,))
+                conn.commit()
+                return cur.rowcount > 0
