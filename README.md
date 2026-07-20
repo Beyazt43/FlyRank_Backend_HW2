@@ -1,6 +1,6 @@
 # Task API
 
-A small CRUD API for managing a to-do list, built with FastAPI. Tasks are stored in memory (no database) — restarting the server resets the data to the three seeded examples.
+A small CRUD API for managing a to-do list, built with FastAPI. Tasks are stored in a Docker Database
 
 ## How to run
 
@@ -28,7 +28,7 @@ A small CRUD API for managing a to-do list, built with FastAPI. Tasks are stored
 
 4. Start the server:
    ```bash
-   uvicorn main:app --reload
+   docker compose up
    ```
 
 5. Visit `http://localhost:8000/docs` for interactive Swagger UI, or use curl / your browser directly against `http://localhost:8000`.
@@ -60,18 +60,29 @@ content-type: application/json
 ```
 
 
-## Swagger UI
-
-![Swagger UI screenshot](swagger-screenshot.png)
-
-
-
 ## Notes on validation behavior
 
 - `POST`/`PUT` with a completely missing `title` field returns FastAPI's built-in `422 Unprocessable Content` (Pydantic's automatic schema validation).
 - `POST`/`PUT` with an empty or whitespace-only `title` (e.g. `{"title": ""}`) returns a custom `400 Bad Request` from application-level validation.
 - This two-layer behavior is standard for FastAPI and intentional — both cases are handled, just at different layers.
 
-## In-memory storage
+## Storage
 
-Data lives only in a Python list in `main.py`. Restarting the server resets tasks back to the three seed examples. This is by design for this stage of the project — persistence (a real database) comes in a later assignment.
+Tasks are stored in PostgreSQL, running in Docker with a persistent volume. Data survives container restarts and app restarts — see "Persistence proof" below.
+
+The project still includes an `InMemoryTaskRepository` implementation (in `repository.py`) from an earlier stage of the project, kept as a reference to show the repository pattern in practice — but it is no longer used by the running app. `main.py` currently instantiates `PostgresTaskRepository`.
+
+
+## Persistence proof
+
+To confirm data survives a full restart:
+
+1. Created a new task via `POST /tasks` while the stack was running.
+2. Confirmed it appeared in `GET /tasks`.
+3. Ran `docker compose down` (stops and removes both containers, but not the volume).
+4. Ran `docker compose up -d` to bring the whole stack back.
+5. Ran `GET /tasks` again — the task was still present, confirming the Postgres volume persisted data independently of the container lifecycle.
+
+## Architecture note
+
+The switch from in-memory storage to Postgres only required changes to `repository.py` (adding `PostgresTaskRepository`) and one line in `main.py` (which repository class gets instantiated). `service.py` and all routes in `main.py` were untouched — proving the repository pattern's separation of concerns.
